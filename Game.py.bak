@@ -1,0 +1,289 @@
+from PIL import Image
+import time
+import json
+import pygame
+import random
+
+class Sprite:
+    def __init__(this, x1, y1, w1, h1, x1_CurrPos, x1_PrevPos, y1_CurrPos, y1_PrevPos, vert_velocity, image_url):
+        this.x = x1
+        this.y = y1
+        this.w = w1
+        this.h = h1
+        this.x_CurrentPos = x1_CurrPos
+        this.x_PreviousPos = x1_PrevPos
+        this.y_CurrentPos = y1_CurrPos
+        this.y_PreviousPos = y1_PrevPos
+        this.vert_vel = vert_velocity
+        this.image = pygame.image.load(image_url)
+        this.image = pygame.transform.scale(this.image, (this.w, this.h))
+        
+    def checkCollision(this, s):
+        if(this.x + this.w <= s.x): # this right < sprite's left
+            return False
+        if(this.x >= s.x + s.w): # this left > sprite's right
+            return False
+        if(this.y + this.h <= s.y): # this botttom < sprite's top
+            return False
+        if(this.y >= s.y + s.h): # this top > sprite's bottom
+            return False
+        return True
+        
+class Mario(Sprite):
+    def __init__(this, x, y):
+        super().__init__(x, y, 60, 95, x, 0, y, 0, 0, "mario1.png")
+        this.mario_images = ["mario1.png", "mario2.png", "mario3.png", "mario4.png", "mario5.png"]
+        this.imageNum = 0
+        this.running = False
+        this.screenPos = 100
+        this.jumpFrameCounter = 0
+        
+        
+    def physics(this):
+        this.vert_vel += 1.2; # Gravity
+		
+        this.y += this.vert_vel
+			
+        if(this.y > 527):
+            this.vert_vel = 0.0
+            this.y = 527 # snap back to the ground
+            this.jumpFrameCounter = 0
+        
+    def update(this):
+        this.image = pygame.image.load(this.mario_images[this.imageNum])
+        this.physics()
+        
+        if(this.running):
+            this.imageNum = this.imageNum + 1
+            
+            if(this.imageNum > 4):
+                this.imageNum = 0
+                
+        this.running = False        
+    
+class Coin(Sprite):
+    def __init__(this, x, y):
+        super().__init__(x, y, 60, 60, x, 0, y, 0, -10, "Coin.png" )
+        pygame.transform.scale(this.image, (this.w, this.h))
+        this.hori_vel = (random.random() * (15 - (-15)) + (-15))
+        
+    def physics(this):
+        this.vert_vel = this.vert_vel + 1.2
+        this.y = this.y + this.vert_vel
+        this.x = this.x + this.hori_vel
+    
+    def update(this):
+        this.physics()
+    
+class CoinBlock(Sprite):
+    def __init__(this, x, y, w, h):
+        super().__init__(x, y, w, h, 0, 0, 0, 0, 0, "CoinBlockOn.png" )
+        this.coinCount = 0
+        
+        
+    def update(this):
+        if(this.coinCount >= 5):
+            this.image = pygame.transform.scale(pygame.image.load("CoinBlockOff.png"), (this.w, this.h))
+    
+class Brick(Sprite):
+    def __init__(this, x, y, w, h):
+        super().__init__(x, y, w, h, 0, 0, 0, 0, 0, "brick.png" )
+       
+        
+    def update(this):
+        pass
+    
+class Model:
+    sprites = []
+    mario = Mario(0, 527)
+    sprites.append(mario)
+    j = open('map.json')
+    data = json.load(j)
+    def __init__(this):
+        this.unmarshal(this.j)
+    
+    def unmarshal(this, ob):
+        for b in this.data['bricks']:
+            this.sprites.append(Brick(b['x'], b['y'], b['w'], b['h']))
+        for cb in this.data['coinBlocks']:
+            this.sprites.append(CoinBlock(cb['x'], cb['y'], cb['w'], cb['h']))
+    
+    def update(this):
+        for s in this.sprites:
+            s.update()
+            if(isinstance(s, Coin)):
+                if(s.y >= 570):
+                    this.sprites.remove(s)
+                
+            this.collision()
+
+    def collision(this):
+        for sprite_1 in this.sprites:
+            if(isinstance(sprite_1, Mario) or isinstance(sprite_1, Coin)):
+                if(sprite_1.x_CurrentPos == sprite_1.x):
+                    sprite_1.x_PreviousPos = sprite_1.x
+                    
+                sprite_1.x_PreviousPos = sprite_1.x_CurrentPos
+                sprite_1.x_CurrentPos = sprite_1.x
+				
+                if(sprite_1.y_CurrentPos == sprite_1.y):
+                    sprite_1.y_PreviousPos = sprite_1.y
+
+                sprite_1.y_PreviousPos = sprite_1.y_CurrentPos
+                sprite_1.y_CurrentPos = sprite_1.y
+                
+            for sprite_2 in this.sprites:
+                
+                marioAndBrick = (isinstance(sprite_1, Mario) and isinstance(sprite_2, Brick))
+                marioAndCoinBlock = (isinstance(sprite_1, Mario) and isinstance(sprite_2, CoinBlock))
+                marioAndCoin = (isinstance(sprite_1, Mario) and isinstance(sprite_2, Coin))
+                coinAndBrick = (isinstance(sprite_1, Coin) and isinstance(sprite_2, Brick))
+                coinAndCoinBlock = (isinstance(sprite_1, Coin) and isinstance(sprite_2, CoinBlock))
+                
+                if( not (sprite_1 == sprite_2) and (marioAndBrick or marioAndCoinBlock or marioAndCoin or coinAndBrick or coinAndCoinBlock)):
+                    
+                    if(sprite_1.checkCollision(sprite_2)):
+                        if(marioAndCoin):
+                            this.sprites.remove(sprite_2)
+                        else:
+                            
+                            sprite_1AboveSprite_2 = sprite_1.y_PreviousPos + sprite_1.h <= sprite_2.y
+                            sprite_1BelowSprite_2 = sprite_1.y_PreviousPos >= sprite_2.y + sprite_2.h
+                            
+                            # Sprite 1 runs into Sprite 2's left side
+                            if(sprite_1.x + sprite_1.w >= sprite_2.x and sprite_1.x_PreviousPos + sprite_1.w <= sprite_2.x):
+                            
+                                # Check that Sprite 1 was not above or below Sprite 2 before collision
+                                if(not sprite_1AboveSprite_2 and not sprite_1BelowSprite_2):
+                                
+                                    # Snap Sprite 1 to pos before collision
+                                    sprite_1.x = sprite_1.x_PreviousPos
+                                    sprite_1.x_CurrentPos = sprite_1.x
+                                    
+                            # Sprite 1 runs into Sprite 2's right side
+                            if(sprite_1.x <= sprite_2.x + sprite_2.w and sprite_1.x_PreviousPos >= sprite_2.x + sprite_2.w):
+                                
+                                # Check that Sprite 1 was not above or below Sprite 2 before collision
+                                if(not sprite_1AboveSprite_2 and not sprite_1BelowSprite_2):
+                                
+                                    # Snap Sprite 1 to pos before collision
+                                    sprite_1.x = sprite_1.x_PreviousPos
+                                    sprite_1.x_CurrentPos = sprite_1.x
+                            
+                            # Sprite 1 falls onto Sprite 2
+                            if(sprite_1.y <= sprite_2.y + sprite_2.h and sprite_1.y + sprite_1.h <= sprite_2.y + sprite_2.h):
+                            
+                                # Check if Sprite 1 came from above Sprite 2
+                                if(sprite_1.y_PreviousPos + sprite_1.h <= sprite_2.y):
+                                    
+                                    # Snap Sprite 1 to top of Sprite 2
+                                    sprite_1.vert_vel = 0
+                                    sprite_1.y = sprite_2.y - sprite_1.h
+                                    sprite_1.y_CurrentPos = sprite_1.y
+									
+                                    if(isinstance(sprite_1, Mario)):
+									
+                                        # Reset jump counter
+                                        this.mario.jumpFrameCounter = 0
+                            
+                            # Sprite 1 jumps into Sprite 2
+                            if(sprite_1.y + sprite_1.h >= sprite_2.y and sprite_1.y >= sprite_2.y):
+                                
+                                # Check if Sprite 1 came from below Sprite 2
+                                if(sprite_1.y_PreviousPos >= sprite_2.y + sprite_2.h):
+                                    
+                                    if(isinstance(sprite_2, CoinBlock)):
+                                        
+                                        # Check coin count
+                                        if(sprite_2.coinCount >= 5):
+                                            pass
+                                        
+                                        else:
+                                         
+                                            # Create new Coin and update count
+                                            this.sprites.append(Coin(sprite_2.x, sprite_2.y - 60))
+                                            sprite_2.coinCount = sprite_2.coinCount + 1
+                                    
+                                    if(isinstance(sprite_1, Mario)):
+                                        
+                                        # Snap Sprite 1 to bottom of Sprite 2
+                                        sprite_1.vert_vel = 0
+                                        sprite_1.y = sprite_2.y + sprite_2.h
+                                        sprite_1.y_CurrentPos = sprite_1.y
+                            
+
+class View:
+    def __init__(this, model, controller):
+        this.background = pygame.image.load("marioBackground2.png")
+        this.m = model
+        this.c = controller
+        
+    def update(this, screen):
+        screen.blit(this.background, (0 - (this.m.mario.x / 2),0))
+        
+        for i in this.m.sprites:
+            if isinstance(i, Mario):
+                screen.blit(i.image, (i.screenPos, i.y))
+            else:   
+                screen.blit(i.image, (i.x - this.m.mario.x + this.m.mario.screenPos, i.y))
+        
+class Controller:
+    def __init__(this, model):
+        this.m = model
+        this.b_corner_x = 0
+        this.b_corner_y = 0
+        this.keys = []
+    
+    def update(this): 
+        this.keys = pygame.key.get_pressed()   
+        if this.keys[pygame.K_RIGHT]:
+            this.m.mario.running = True
+            this.m.mario.x = this.m.mario.x + 10
+            
+        if this.keys[pygame.K_LEFT]:
+            this.m.mario.running = True
+            this.m.mario.x = this.m.mario.x - 10
+            
+        if this.keys[pygame.K_UP]:
+            this.m.mario.jumpFrameCounter = this.m.mario.jumpFrameCounter + 1
+            
+            if this.m.mario.jumpFrameCounter == 1:
+                this.m.mario.vert_vel = this.m.mario.vert_vel - 20              # Jump Acceleration
+                
+        if this.keys[pygame.K_SPACE]:
+            this.m.mario.jumpFrameCounter = this.m.mario.jumpFrameCounter + 1
+            
+            if this.m.mario.jumpFrameCounter < 5:
+                this.m.mario.vert_vel = this.m.mario.vert_vel - 6.5             # Jump Acceleration
+
+        
+class Game:
+    pygame.init()
+    screen = pygame.display.set_mode([500, 500], pygame.RESIZABLE)
+    pygame.display.set_caption('Mario Game')
+    WHITE = (255, 255, 255)
+    model = Model()
+    controller = Controller(model)
+    view = View(model, controller)
+    
+    
+        
+    def run(this):
+        run = True
+        while run:     
+            this.screen.fill(this.WHITE)
+            this.model.update()
+            this.view.update(this.screen)
+            this.controller.update()
+            pygame.display.update()
+            
+            try:
+                pygame.time.wait(40)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        run = False
+            except:
+                run = False
+        
+g = Game()
+g.run()
